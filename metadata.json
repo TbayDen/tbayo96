@@ -1,0 +1,5 @@
+{
+  "name": "Aritmatika Dasar",
+  "description": "Aplikasi latihan aritmatika dasar dengan generator angka acak untuk berbagai tingkat kesulitan.",
+  "requestFramePermissions": []
+}
