@@ -17,17 +17,20 @@ import {
 } from 'lucide-react';
 
 type Difficulty = 'satuan' | 'puluhan' | 'ratusan' | 'campuran_sat_pul' | 'campuran_sat_rat';
+type Operator = '+' | '-' | 'x' | ':';
 
 interface Question {
   num1: number;
   num2: number;
-  operator: '+' | '-';
+  operator: Operator;
   answer: number;
 }
 
 export default function App() {
   const [gameState, setGameState] = useState<'setup' | 'playing' | 'result'>('setup');
   const [difficulty, setDifficulty] = useState<Difficulty>('satuan');
+  const [selectedOperators, setSelectedOperators] = useState<Operator[]>(['+', '-']);
+  const [includeDecimals, setIncludeDecimals] = useState(false);
   const [questionCount, setQuestionCount] = useState<number>(10);
   const [currentQuestionIndex, setCurrentQuestionIndex] = useState(0);
   const [questions, setQuestions] = useState<Question[]>([]);
@@ -35,44 +38,76 @@ export default function App() {
   const [score, setScore] = useState({ correct: 0, incorrect: 0 });
   const [feedback, setFeedback] = useState<'correct' | 'incorrect' | null>(null);
 
-  const getRandomNumber = (diff: Difficulty) => {
+  const getRandomNumber = (diff: Difficulty, forceInteger = false) => {
+    let base = 1;
+    let range = 9;
+
     switch (diff) {
       case 'satuan':
-        return Math.floor(Math.random() * 9) + 1;
+        base = 1; range = 9; break;
       case 'puluhan':
-        return Math.floor(Math.random() * 90) + 10;
+        base = 10; range = 89; break;
       case 'ratusan':
-        return Math.floor(Math.random() * 900) + 100;
+        base = 100; range = 899; break;
       case 'campuran_sat_pul':
-        return Math.floor(Math.random() * 99) + 1;
+        base = 1; range = 98; break;
       case 'campuran_sat_rat':
-        return Math.floor(Math.random() * 999) + 1;
-      default:
-        return 1;
+        base = 1; range = 998; break;
     }
+
+    if (includeDecimals && !forceInteger) {
+      // Generate a number with 1 decimal place
+      const num = Math.random() * range + base;
+      return Math.round(num * 10) / 10;
+    }
+
+    return Math.floor(Math.random() * range) + base;
+  };
+
+  const toggleOperator = (op: Operator) => {
+    setSelectedOperators(prev => {
+      if (prev.includes(op)) {
+        if (prev.length === 1) return prev; // Must have at least one
+        return prev.filter(o => o !== op);
+      }
+      return [...prev, op];
+    });
   };
 
   const generateQuestions = useCallback(() => {
     const newQuestions: Question[] = [];
+    const ops = selectedOperators.length > 0 ? selectedOperators : (['+'] as Operator[]);
+
     for (let i = 0; i < questionCount; i++) {
-      let n1 = getRandomNumber(difficulty);
-      let n2 = getRandomNumber(difficulty);
-      const op = Math.random() > 0.5 ? '+' : '-';
-      
-      // Ensure no negative results for simplicity
-      if (op === '-' && n1 < n2) {
-        [n1, n2] = [n2, n1];
+      const op = ops[Math.floor(Math.random() * ops.length)];
+      let n1, n2, answer;
+
+      if (op === ':') {
+        // For division: answer * n2 = n1
+        // If decimals are on, we can have decimal answers, but let's keep it clean
+        const tempAnswer = getRandomNumber(difficulty);
+        n2 = getRandomNumber(difficulty === 'ratusan' ? 'puluhan' : difficulty, true); // Keep divisor as integer for sanity
+        n1 = Math.round((tempAnswer * n2) * 100) / 100;
+        answer = tempAnswer;
+      } else if (op === 'x') {
+        n1 = getRandomNumber(difficulty);
+        n2 = getRandomNumber(difficulty === 'ratusan' ? 'puluhan' : difficulty, true); // Keep second factor as integer
+        answer = Math.round((n1 * n2) * 100) / 100;
+      } else if (op === '-') {
+        n1 = getRandomNumber(difficulty);
+        n2 = getRandomNumber(difficulty);
+        if (n1 < n2) [n1, n2] = [n2, n1];
+        answer = Math.round((n1 - n2) * 10) / 10;
+      } else {
+        n1 = getRandomNumber(difficulty);
+        n2 = getRandomNumber(difficulty);
+        answer = Math.round((n1 + n2) * 10) / 10;
       }
       
-      newQuestions.push({
-        num1: n1,
-        num2: n2,
-        operator: op as '+' | '-',
-        answer: op === '+' ? n1 + n2 : n1 - n2
-      });
+      newQuestions.push({ num1: n1, num2: n2, operator: op, answer });
     }
     setQuestions(newQuestions);
-  }, [difficulty, questionCount]);
+  }, [difficulty, questionCount, selectedOperators, includeDecimals]);
 
   const startGame = () => {
     generateQuestions();
@@ -87,7 +122,8 @@ export default function App() {
     e.preventDefault();
     if (userAnswer === '' || feedback !== null) return;
 
-    const isCorrect = parseInt(userAnswer) === questions[currentQuestionIndex].answer;
+    const parsedUserAnswer = parseFloat(userAnswer.replace(',', '.'));
+    const isCorrect = Math.abs(parsedUserAnswer - questions[currentQuestionIndex].answer) < 0.01;
     
     if (isCorrect) {
       setScore(prev => ({ ...prev, correct: prev.correct + 1 }));
@@ -166,6 +202,25 @@ export default function App() {
                 </div>
 
                 <div>
+                  <label className="block text-sm font-medium text-stone-700 mb-3">Pilih Operasi</label>
+                  <div className="flex gap-2">
+                    {(['+', '-', 'x', ':'] as Operator[]).map((op) => (
+                      <button
+                        key={op}
+                        onClick={() => toggleOperator(op)}
+                        className={`flex-1 py-3 rounded-xl border font-bold text-xl transition-all ${
+                          selectedOperators.includes(op)
+                            ? 'bg-emerald-50 border-emerald-500 text-emerald-700 ring-1 ring-emerald-500'
+                            : 'bg-white border-stone-200 text-stone-400 hover:border-stone-300'
+                        }`}
+                      >
+                        {op}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                <div>
                   <label className="block text-sm font-medium text-stone-700 mb-3">Jumlah Pertanyaan: {questionCount}</label>
                   <input
                     type="range"
@@ -176,6 +231,13 @@ export default function App() {
                     onChange={(e) => setQuestionCount(parseInt(e.target.value))}
                     className="w-full h-2 bg-stone-200 rounded-lg appearance-none cursor-pointer accent-emerald-600"
                   />
+                </div>
+
+                <div className="flex items-center gap-3 bg-stone-50 p-4 rounded-2xl border border-stone-100 cursor-pointer hover:bg-stone-100 transition-colors" onClick={() => setIncludeDecimals(!includeDecimals)}>
+                  <div className={`w-6 h-6 rounded-md border-2 flex items-center justify-center transition-all ${includeDecimals ? 'bg-emerald-500 border-emerald-500 text-white' : 'bg-white border-stone-300'}`}>
+                    {includeDecimals && <CheckCircle2 size={16} />}
+                  </div>
+                  <span className="text-sm font-semibold text-stone-700">Sertakan Desimal (0.1)</span>
                 </div>
 
                 <button
@@ -232,7 +294,8 @@ export default function App() {
               <form onSubmit={handleSubmit} className="relative">
                 <input
                   autoFocus
-                  type="number"
+                  type="text"
+                  inputMode="decimal"
                   value={userAnswer}
                   onChange={(e) => setUserAnswer(e.target.value)}
                   placeholder="Jawaban..."
